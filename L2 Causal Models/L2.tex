@@ -1,0 +1,657 @@
+
+
+\documentclass{beamer}
+\setbeamertemplate{caption}{\raggedright\insertcaption\par}
+ 
+\usepackage[utf8]{inputenc}
+
+\usetheme{Boadilla}
+\usecolortheme{default}
+\usepackage{dsfont}
+\usepackage{multirow}
+\usepackage{tikz}
+\usetikzlibrary{bayesnet}
+\usepackage{amsmath}
+\usepackage{graphicx}
+
+\newcommand{\ci}{\mathrel{\text{\scalebox{1.07}{$\perp\mkern-10mu\perp$}}}}
+
+
+
+ 
+%Information to be included in the title page:
+\title[Causal Graphical Models] %optional
+{Causal Graphical Models}
+ 
+%\subtitle{A short story }
+ 
+%\author[Wang, Webb, Rainforth] % (optional, for multiple authors)
+%{Benjie Wang, Stefan Webb, Tom Rainforth}
+
+ 
+ 
+\date[03/03/2020] % (optional)
+{}
+ 
+
+
+\AtBeginSection[]
+{
+  \begin{frame}
+    \frametitle{Table of Contents}
+    \tableofcontents[ 
+currentsection,
+currentsubsection
+] 
+  \end{frame}
+}
+
+
+ 
+\begin{document}
+ 
+\frame{\titlepage}
+
+ 
+
+ 
+\section{Recap}
+
+\begin{frame}
+\frametitle{Recap}
+\begin{itemize}
+	\item Causality is the study of the underlying structure of a system;
+	\bigskip
+	
+	\item Through studying causality and causal models, we can:
+	\begin{itemize}
+		\item Answer questions about how a system responds to \textbf{changes} in its mechanisms;
+		\item Specify causal relationships that are more \textbf{stable} and more fundamental than generic statistical relationships.
+	\end{itemize}
+	
+	\bigskip
+	\item A model assigns truth values to statements about the system; a causal model assigns truth values to causal statements/queries
+\end{itemize}
+\note[]{
+Study of the generative process. Not just the distribution over observed variables.
+
+If a small part of the system changed, our statistical/ML models would be useless and we'll have to gather loads of data in the new environment and learn it all again.
+
+Causal relationships are how humans think - and for good reason, it's a compact and STABLE representation. If we change one part, the others shouldn't change. "disentangled" the system.
+
+From the perspective of AI, we can use statistical models, i.e. probability distributions, make predictions about the world (ML, e.g. BNNs) p(y|x), model-based RL p(s'|s, a), learn state-action value functions in RL (in distributional RL, p(v|s, a). (both useful for autonomous agents and for general data science). Imagine what we could do if in addition we knew about:
+- ML: what would have happened in the population had these people stopped smoking?
+- RL/agents: what would have happened the car had slowed down, given what we know about what actually happened? or alternatively, what would happen if instead of following our policy, we chose an alternative action (off-policy)?
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{Types of queries}
+\begin{enumerate}
+	\item \textbf{Associations}: $p(Y|X=x)$
+	\bigskip
+	\pause
+	\item \textbf{Intervention}: $p(Y|do(X=x), Z=z)$ or $p(Y_{\{X=x\}} | Z=z)$
+	\bigskip
+	\pause
+	\item \textbf{Counterfactual}: $p(Y_{\{X=x'\}} | Y=y, X=x)$
+\end{enumerate}
+
+\note[]{
+subtle point: All of these queries are defined with respect to the TRUE GENERATIVE PROCESS/system. Models will answer these queries, but of course any model can be wrong, and some models are more limited than others (e.g. a joint probability distribution model tells us nothing about 2) or 3)). p represents true system.
+
+Intervention: Answer questions like "How does giving people flu shots affect the death rate from flu?" not just observed
+
+Counterfactual: Answer questions like: "Could X=x' have prevented Y=y?, i.e. was X=x necessary"
+
+The difference between interventions and counterfactuals is subtle. The point is whether the "action" affects the given facts. If so, it complicates things and requires a stronger model. This also lines up with how we intuitively speak about I vs C... in C, we need to consider how things we know happened might change, while in I, ICM, the intervention and the prior knowledge do not affect each other.
+}
+\end{frame}
+
+\section{Types of models}
+\subsection{Statistical Models}
+\begin{frame}
+\frametitle{1. Statistical Models}
+
+\textbf{Model}: Set of random variables $(X_1, X_2, ..., X_N)$ follow a \textbf{joint probability distribution} $P(X_1, X_2, ..., X_N)$.
+\bigskip
+
+\textbf{Queries}: For two disjoint subsets $S, S' \subset \{1, ..., N\}$, we have
+$$p(X_S | X_{S'}) = \frac{\sum_{i \not\in (S \cup S')} p(X_1, X_2, ..., X_N)}{\sum_{i \not\in S'}  p(X_1, X_2, ..., X_N)} = \frac{p(X_{(S \cup S')})}{p(X_{S'})}$$
+
+\bigskip
+\textbf{Representation}: To represent a generic distribution over $N$ binary variables, we need $O(2^N)$ space. The situation is even worse for continuous distributions (which don't have a parametric form like e.g. Multivariate Gaussian)...
+
+\note[]{
+Purely statistical/probabilistic here... no causality. Lot of theory here because it's also relevant to causal models.
+
+Note we're separating the model ($P$) from the query about the TRUE probability distribution $p$.
+
+We can answer associational questions... but the joint probability distribution has no information about the GENERATIVE PROCESS or CONTEXT.
+
+In theory we can answer queries, but of course this sum might sometimes be intractable.
+
+Write out representation explicitly on board. This is:
+1) a problem for storage, 
+2) for expressing assumptions when learning/searching for a model, 
+3) for inference (the summations).
+
+We have to restrict the space of possible probability distributions somehow...
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{1. Statistical Models}
+\framesubtitle{Conditional Independence}
+For a given probability distribution $p$, X is \textbf{conditionally independent} of Y given Z if:
+$$p(x|y, z) = p(x|z) \text{ whenever } p(y, z) > 0$$
+and this is written $X \ci Y | Z$.
+
+\bigskip
+Conditional independences allow us to restrict the space of possible probability distributions in a structured way.
+
+\note[]{
+An example might be: Computer. Given its age, faults in the gpu and cpu might be independent. (but not independent generally).
+
+Note that in general, this doesn't imply and isn't implied by X ci Y.
+
+The graphoid axioms allow us to combine conditional independences logically.
+
+These are important also because we can measure conditional correlations from data.
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{1. Statistical Models}
+\framesubtitle{Bayesian networks}
+\textbf{Bayesian Networks} (BNs) are a compact means for representing a probability distribution, consisting of:
+\pause
+\begin{itemize}
+	\item A directed acyclic graph (DAG) G:
+\end{itemize}
+	\begin{center}
+	\tikz{ %
+        \node[latent] (x_5) {$x_5$} ; %
+        \node[latent, left=of x_5, yshift=0.8cm] (x_3) {$x_3$} ; %
+        \node[latent, left=of x_5, yshift=-0.8cm] (x_4) {$x_4$} ; %
+        \node[latent, left=of x_3, yshift=0cm] (x_2) {$x_2$} ; %
+        \node[latent, left=of x_4, yshift=0cm] (x_1) {$x_1$} ; %
+        \edge {x_3,x_4} {x_5} ; %
+        \edge {x_2} {x_3} ;
+        \edge {x_3} {x_4} ;
+        \edge {x_1} {x_4} ;
+        \edge {x_1} {x_2} ;
+      }
+     \end{center}
+\begin{itemize}
+	\item A probability distribution $P(x| pa(x))$ for every node $x$ in the DAG
+\end{itemize}
+\pause
+
+\bigskip
+The joint probability distribution is then $P(x_1, ..., x_N) = \prod_{i} P(x_i | pa(x_i))$.
+
+\medskip \pause
+If a joint probability distribution $q$ can be factorized in this way, we say that $q$ is \textbf{Markov} relative to G.
+\note[]{
+Some will be aware of BNs; they're not BNNs!
+
+Acyclic: no cycle of directed edges
+
+
+If binary, we only need to store:
+$x_1: 2 - 1 = 1$
+$x_2: 2*2 - 1 = 3$
+$x_3: 2*2 - 1 = 3$
+$x_4: 2*2*2 - 1 = 7$
+$x_5: 2*2*2 - 1 = 7$
+Total = 21 (less than 31)
+We have decomposed the distribution.
+
+How have we done this? We have imposed constraints on the possible distributions that can be expressed.
+
+Draw on board: complete graph and no edge graph. 
+
+The graphical structure imposes conditional independences, regardless of the individual probability distributions chosen.
+
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{1. Statistical Models}
+\framesubtitle{Simple DAGs}
+
+\setlength{\tabcolsep}{15pt}
+\renewcommand{\arraystretch}{4}
+\begin{table}[ht]
+  \begin{center}
+    \begin{tabular}{lcc}
+      DAG & $X \ci Y$ & $X \ci Y | Z$
+      \\
+      \hline
+      \pause
+      \tikz{ %
+        \node[latent] (y) {$y$} ; %
+        \node[latent, left=of y, yshift=0cm] (z) {$z$} ; %
+        \node[latent, left=of z, yshift=0cm] (x) {$x$} ; 
+        \edge {z} {y} ;
+        \edge {x} {z} ;
+      } &
+      No &
+      Yes
+      \\
+      \pause
+      \tikz{ %
+        \node[latent] (y) {$y$} ; %
+        \node[latent, left=of y, yshift=0cm] (z) {$z$} ; %
+        \node[latent, left=of z, yshift=0cm] (x) {$x$} ; 
+        \edge {z} {y} ;
+        \edge {z} {x} ;
+      } &
+      No &
+      Yes
+      \\
+      \pause
+      \tikz{ %
+        \node[latent] (y) {$y$} ; %
+        \node[latent, left=of y, yshift=0cm] (z) {$z$} ; %
+        \node[latent, left=of z, yshift=0cm] (x) {$x$} ; 
+        \edge {y} {z} ;
+        \edge {x} {z} ;
+      } &
+      Yes &
+      No
+    \end{tabular}
+  \end{center}
+\end{table}
+\bigskip
+\bigskip
+\note[]{
+
+3rd case: imagine p(z|x, y) > 0 for some z iff x = y. 
+The bottom is called a v-structure.
+
+}
+\end{frame} 
+\begin{frame}
+\frametitle{1. Statistical Models}
+\framesubtitle{d-separation}
+We can characterize the restrictions a DAG makes on the joint distribution by the \textbf{conditional independences} it implies. \textbf{d-separation} is a graphical criterion for determining these conditional independences.
+
+\bigskip
+
+$X \ci Y | Z$ is true in every distribution $p$ Markov to $G$ if:
+
+\begin{center}all paths between $X$ and $Y$ are blocked by $Z$.\end{center}
+
+Example: $x_2 \ci x_5 | \{x_3, x_4\}$
+
+\begin{center}
+	\tikz{ %
+        \node[latent] (x_5) {$x_5$} ; %
+        \node[latent, left=of x_5, yshift=0.8cm] (x_3) {$x_3$} ; %
+        \node[latent, left=of x_5, yshift=-0.8cm] (x_4) {$x_4$} ; %
+        \node[latent, left=of x_3, yshift=0cm] (x_2) {$x_2$} ; %
+        \node[latent, left=of x_4, yshift=0cm] (x_1) {$x_1$} ; %
+        \edge {x_3,x_4} {x_5} ; %
+        \edge {x_3} {x_4} ;
+        \edge {x_1} {x_4} ;
+        \edge {x_1} {x_2} ;
+        \edge {x_2} {x_3} ;
+      }
+\end{center}
+
+\note[]{
+X and Y are no longer correlated by any path.
+
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{Inference}
+How do we compute quantities like $P(x_3|x_5)$ in a Bayesian network?
+\pause
+\medskip
+In general inference in Bayesian networks is NP-complete.
+
+\begin{itemize}
+	\item \textbf{Exact methods}: "Enumeration", junction-tree algorithm, cut-set conditioning
+	\item \textbf{Approximate methods}: Approximate message passing, MCMC/Gibbs sampling, HMC, variational methods
+\end{itemize}
+
+\note[] {
+Links to probabilistic programming
+
+Approximate: Generic methods for Bayesian inference	
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{1. Statistical Models}
+\framesubtitle{Summary}
+
+\begin{itemize}
+	\item \textbf{Bayesian networks} allow us to represent joint probability distributions efficiently, in the sense of:
+	\begin{enumerate}
+		\item Less space required;
+		\item Ability to specify assumptions/restrictions, which may aid learning;
+		\item Faster inference (query answering) methods
+	\end{enumerate}
+	\item \textbf{d-separation} specifies the CIs implied by a DAG using the idea of "open" and "blocked" paths
+	\item \textbf{Observational equivalence}: Two distinct DAGs may imply the same set of conditional independences. As a result, we can never distinguish between them using data alone.
+\end{itemize}
+
+\note[]{
+Observation equivalence is because of the two possible simple BNs which have the same conditional independence relations. In particular, two DAGs are equivalent iff they have the same skeleton and v-structures.
+
+Alternative way of thinking: if we think of the factorization as specifying a generative model, this means multiple distinct generative models may produce the same distributions.
+
+There is additional representational power here relating to generative processes: this is where Causal BNs come in.
+}
+\end{frame}
+
+\subsection{Causal Models}
+\begin{frame}
+\frametitle{2. Causal Models}
+\textbf{Model}: Set of \textbf{interventional} probability distributions $\pmb{P*} = \{P_{X=x}(v): X \subseteq V\}$.
+\bigskip
+
+\textbf{Queries}: Any interventional probability, e.g. $p(Y|do(X), Z)$
+
+
+\bigskip
+\textbf{Representation}: Clearly, na\"ively this is even more difficult to represent than the single joint probability distribution. However, DAGs provide a convenient way to handle this...
+
+\note[]{
+We've been looking at BNs which only express associations
+
+The model needs to represent a SET of distributions. This enables us to answer these interventional queries in the straightforward way (on board). However, let's keep these distinct conceptually. The query is wrt the true generative process, the model (set of probability distributions) is just a model which answers, rightly or wrongly, the query.
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{2. Causal Models}
+\framesubtitle{Causal Bayesian Networks}
+\textbf{Causal Bayesian Networks} are a means for representing a set of interventional distributions, consisting of:
+\pause
+\begin{itemize}
+	\item A directed acyclic graph (DAG) G:
+\end{itemize}
+	\begin{center}
+	\tikz{ %
+        \node[latent] (x_5) {$x_5$} ; %
+        \node[latent, left=of x_5, yshift=0.8cm] (x_3) {$x_3$} ; %
+        \node[latent, left=of x_5, yshift=-0.8cm] (x_4) {$x_4$} ; %
+        \node[latent, left=of x_3, yshift=0cm] (x_2) {$x_2$} ; %
+        \node[latent, left=of x_4, yshift=0cm] (x_1) {$x_1$} ; %
+        \edge {x_3,x_4} {x_5} ; %
+        \edge {x_2} {x_3} ;
+        \edge {x_3} {x_4} ;
+        \edge {x_1} {x_4} ;
+        \edge {x_1} {x_2} ;
+      }
+     \end{center}
+     \pause
+\begin{itemize}
+	\item A probability distribution $P(x| pa(x))$ for every node $x$ in the DAG
+\end{itemize}
+\pause
+
+\bigskip
+The joint probability distribution is then $P(x_1, ..., x_N) = \prod_{i} P(x_i | pa(x_i))$.
+
+\note[]{
+This looks familiar... so how can the same DAG + parent-child probability distributions define a whole set of interventional distributions?
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{2. Causal Models}
+\framesubtitle{Principle of Independent Causal Mechanisms}
+The \textbf{ICM principle} states that the individual causal mechanisms of a systems' causal generative process do not:
+\begin{itemize}
+\pause
+	\item \textit{inform} each other
+	\item \textit{influence} each other
+\end{itemize}
+
+To mimic this in our causal model, we derive interventional distributions by making the necessary intervention and leaving all other mechanisms.
+
+Example: $P_{X_4 = x'} (x_1, ..., x_5)$
+
+\begin{center}
+	\tikz{ %
+        \node[latent] (x_5) {$x_5$} ; %
+        \node[latent, left=of x_5, yshift=0.8cm] (x_3) {$x_3$} ; %
+        \node[latent, left=of x_5, yshift=-0.8cm] (x_4) {$x_4$} ; %
+        \node[latent, left=of x_3, yshift=0cm] (x_2) {$x_2$} ; %
+        \node[latent, left=of x_4, yshift=0cm] (x_1) {$x_1$} ; %
+        \edge {x_3,x_4} {x_5} ; %
+        \edge {x_2} {x_3} ;
+        \edge {x_1} {x_2} ;
+      }
+\end{center}
+
+$P_{X_4 = x'} (x_1, ..., x_5) = P(x_2|x_1) P(x_3|x_2) \mathds{1}_{x_4 = x'} P(x_5|x_3, x_4)$
+
+\note[] {
+Of course, here we are just making this assumption in our model and hoping that it reflects reality. But it is certainly reasonable.
+
+This is why causal relationships are stable. By changing one mechanism in the generative process, we can completely mess up a probability distribution. Meanwhile the actual causal generative process has only changed slightly. We wish to mimic this in our models.
+
+"Disentangled"
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{2. Causal Models}
+\framesubtitle{Inference}
+How do we compute $P_{X=x}(Y | Z)$ generally?
+
+\bigskip
+\textbf{do-calculus}: A set of rules for algebraically manipulating interventional expressions to obtain an formula which only uses probabilistic expressions involving observed variables.
+
+\bigskip
+\textbf{Example:} Backdoor adjustment $P_{X_4 = x'}(x_5)$
+\begin{center}
+	\tikz{ %
+        \node[latent] (x_5) {$x_5$} ; %
+        \node[latent, left=of x_5, yshift=0.8cm] (x_3) {$x_3$} ; %
+        \node[latent, left=of x_5, yshift=-0.8cm] (x_4) {$x_4$} ; %
+        \node[latent, left=of x_3, yshift=0cm] (x_2) {$x_2$} ; %
+        \node[latent, left=of x_4, yshift=0cm] (x_1) {$x_1$} ; %
+        \edge {x_3,x_4} {x_5} ; %
+        \edge {x_2} {x_3} ;
+        \edge {x_3} {x_4} ;
+        \edge {x_1} {x_4} ;
+        \edge {x_1} {x_2} ;
+      }
+     \end{center}
+     
+Want a set of variables $Z$ that block all backdoor paths from $x_4$ to $x_5$
+$$P_{X_4=x'}(x_5) = \sum_{x_3} P(x_5|x_3, x') P(x_3)$$
+
+
+
+\note[]{
+If we have a full causal model, we can always do this. However, if we have unobserved variables, it gets trickier.
+
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{2. Causal Models}
+\framesubtitle{Inference?}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{3. Functional Causal Model}
+\textbf{Model}: Modelled \textbf{generative process}
+\bigskip
+
+\textbf{Queries}: Any counterfactual probability, e.g. $p(Y_{X=x'}| Y=y)$
+
+
+\bigskip
+\textbf{Representation}: See next slide...
+
+\note[]{
+Set of interventional distributions is not sufficient anymore... how do you reason about how the intervention affects known facts?
+
+}
+\end{frame}
+
+\subsection{Functional Causal Models}
+\begin{frame}
+\frametitle{3. Functional Causal Model}
+\framesubtitle{Structural Causal Models}
+\textbf{Structural Causal Models (SCMs)} are a means for representing a generative process, consisting of:
+\pause
+\begin{itemize}
+	\item A directed acyclic graph (DAG) G:
+\end{itemize}
+\only<1-2>{
+	\begin{center}
+	\tikz{ %
+        \node[latent] (x_5) {$x_5$} ; %
+        \node[latent, left=of x_5, yshift=0.8cm] (x_3) {$x_3$} ; %
+        \node[latent, left=of x_5, yshift=-0.8cm] (x_4) {$x_4$} ; %
+        \node[latent, left=of x_3, yshift=0cm] (x_2) {$x_2$} ; %
+        \node[latent, left=of x_4, yshift=0cm] (x_1) {$x_1$} ; %
+        \edge {x_3,x_4} {x_5} ; %
+        \edge {x_2} {x_3} ;
+        \edge {x_3} {x_4} ;
+        \edge {x_1} {x_4} ;
+        \edge {x_1} {x_2} ;
+      }
+     \end{center}
+  }
+\pause
+\only<3->{   
+\begin{center}
+	\tikz{ %
+        \node[latent] (x_5) {$x_5$} ; %
+        \node[latent, left=of x_5, yshift=0.8cm] (x_3) {$x_3$} ; %
+        \node[latent, left=of x_5, yshift=-0.8cm] (x_4) {$x_4$} ; %
+        \node[latent, left=of x_3, yshift=0cm] (x_2) {$x_2$} ; %
+        \node[latent, left=of x_4, yshift=0cm] (x_1) {$x_1$} ; %
+        \node[obs, right=of x_5, yshift=0cm] (u_5) {$u_5$} ; %
+        \node[obs, left=of x_2, yshift=0cm] (u_2) {$u_2$} ; %
+        \node[obs, left=of x_1, yshift=0cm] (u_1) {$u_1$} ; %
+        \node[obs, left=of x_5, yshift=2cm] (u_3) {$u_3$} ; %
+        \node[obs, left=of x_5, yshift=-2cm] (u_4) {$u_4$} ; %
+
+        \edge {x_3,x_4} {x_5} ; %
+        \edge {x_2} {x_3} ;
+        \edge {x_3} {x_4} ;
+        \edge {x_1} {x_4} ;
+        \edge {x_1} {x_2} ;
+        
+        \edge {u_1} {x_1} ;
+        \edge {u_2} {x_2} ;
+        \edge {u_3} {x_3} ;
+        \edge {u_4} {x_4} ;
+        \edge {u_5} {x_5} ;
+      }
+     \end{center}
+}
+\pause
+\begin{itemize}
+	\item A functional equation $x_i = f_i(pa(x_i), u_i)$ for every node $x_i$;
+	\item A distribution $P(u)$ over the "unobserved"/"noise" variables
+\end{itemize}
+\note[]{
+Got quite a lot of use out of this diagram!
+
+You might ask how this is different from causal models, after all the distribution over $u$ and the functional equation implicitly define a probability distribution.
+
+The difference is that there are many possible choices of $P(u)$ and $f$ that give rise to the same probability distribution... in FCMs we are truly modelling the generative process wrt unobserved variables.
+
+Usually we'll assume that the $u_i$ are independent under this distribution. This is in some sense saying the model is complete: dependence would occur only if there were some unmodelled common cause.
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{3. Functional Causal Model}
+\framesubtitle{Inference}
+How to compute $P(Y_{X=x'}|Z=z)$?
+
+We write $<M, P(u)>$ to represent an SCM, where $M$ is the functional equation model and $P(u)$ is the distribution over $u$.
+\begin{enumerate}
+	\item \textbf{Abduction}: Compute $P(u|Z=z)$
+	\item \textbf{Action}: Modify the SCM by replacing the structural equation for $X = f_X(pa(X), u_X)$ with $X = x$
+	\item \textbf{Prediction}: Compute the conditional probability $P(Y|Z=z)$ \textbf{in the new SCM} $<M_{X=x}, P(u|Z=z)>$
+\end{enumerate}
+\end{frame}
+
+\section{Learning}
+
+\begin{frame}
+\frametitle{Learning}
+What might we want to learn?
+
+\bigskip
+\begin{itemize}
+	\item \textbf{Structure Learning}: Learning causal graphs based on observed data (and perhaps assumptions)
+	\item \textbf{Learning conditional distributions}: $P(x|pa(x))$
+	\item \textbf{Learning functional relatiomships}: $f(x|pa(x), u), P(u)$
+\end{itemize}
+
+\note[]{
+Won't speak about the last two in depth:
+1) Conditional distributions can just be read off from data. Or we can use machine learning to learn these probabilistic relationships.
+2) This is very difficult as there's no obvious way to distinguish between different mechanisms for the same conditional distribution, and we can only ever observe one counterfactual world. Need to make strong assumptions like monotonicity                                                                             
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{Structure Learning}
+Recall: From data alone we cannot distinguish between a class of observationally equivalent DAGs.
+
+\textbf{PC algorithm}
+
+Assumptions:
+\begin{itemize}
+	\item \textbf{Causal Sufficiency:} No hidden/latent variables
+	\item \textbf{Causal Faithfulness}: If a conditional independence holds in the distribution, then we do have the corresponding d-separation (i.e. "simplest/most-restrictive DAG")
+\end{itemize}
+
+Steps:
+\begin{enumerate}
+	\item \textbf{Learn the skeleton}
+	\item \textbf{Learn the v-structures}
+	\item \textbf{Direct the remaining edges}
+\end{enumerate}
+\note[]{
+Always need some assumptions.
+
+1) Look at adjacent nodes i and j. Test conditional independence with sets of size $k$, if found, remove edges from complete undirected graph and store separating set. Increase k
+2) Consider all triples i, j, k where i, k are not adjacent, based on the separating set which removed the edge, determine if it's a v-structure (it is if j is not in S).
+3) Orient remaining edges using some additional rules
+
+polynomial time algorithm
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{Other structure learning algorithms}
+\begin{itemize}
+	\item Greedy equivalence search
+	\item MMHC
+	\item LINGAM ("gaussianness" of variables)
+	\item BACKSHIFT
+\end{itemize}
+
+\note[] {
+Previous was a "constraint based approach"
+
+Also score-based approaches
+
+}
+\end{frame}
+
+\bibliographystyle{apalike}
+\bibliography{citations}
+\end{document}
+
